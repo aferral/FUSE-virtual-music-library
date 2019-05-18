@@ -1,0 +1,29 @@
+
+# todo select with ' , interactuar con reproductor
+
+
+# play random 
+watch -n0 "python cmd_pm.py --random | xargs cvlc --play-and-exit"
+
+# select one to play
+python cmd.py --list | dmenu -f | awk 'BEGIN {FS=" ,, ";}{print $2}' | xargs -r python cmd.py --play | xargs -r cvlc --play-and-exit
+
+# query
+python cmd.py --query "select DISTINCT(TALB) from metadata"
+
+# playlist add
+python cmd.py --list | dmenu >> play1.txt
+
+# playlist play
+
+# cerrar
+dbus-send --type=method_call --dest=org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Quit
+qdbus org.mpris.MediaPlayer2.vlc /org/mpris/MediaPlayer2
+
+# select one album songs
+t_f=$(mktemp)
+python cmd.py --query "select DISTINCT(TALB) from metadata" | dmenu | xargs -I {} python cmd.py --query "select * from metadata where TALB = '{}' "  | awk 'BEGIN {FS=",";}{print $2 " ,, " $6}' > $t_f
+bash play.sh $t_f ;
+ls
+
+

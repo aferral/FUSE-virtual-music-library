@@ -8,8 +8,12 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import random
 from datetime import datetime
 import shutil
-
 from utils import encrypt_file, key, decrypt_file
+from functools import lru_cache
+import hashlib
+import os.path
+import hashlib
+import tempfile
 
 folder_in = 'files_to_upload'
 folder_out = 'files_to_delete'
@@ -21,7 +25,7 @@ FOLDER_ID = '13cjZpYDNAy2N_mMh3sdH-muFWpkgzLTQ'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
-import hashlib
+
 
 def hash_bytestr_iter(bytesiter, hasher, ashexstr=False):
     for block in bytesiter:
@@ -68,12 +72,13 @@ def get_service():
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
 
-    service = build('drive', 'v3', credentials=creds)
+    service = build('drive', 'v3', credentials=creds,cache_discovery=False) 
     return service
 
 
 
 def download_file(drive_service, file_id,out_fd):
+    print('CALLING GET')
     request = drive_service.files().get_media(fileId=file_id)
     downloader = MediaIoBaseDownload(out_fd, request)
     done = False
@@ -92,44 +97,31 @@ def upload_file(driver_service,fd,metadata,parent_folder=FOLDER_ID):
     return new_id
 
 
-def process_single_file(new_name,old_name):
-
-
-    if os.path.exists(old_name):
-        print('Uploading {0}'.format(old_name))
-    else:
-        print("No existe archivo {0} en carpeta entrada se asume que ya fue procesado.".format(old_name))
-        return None 
-
+def encript_and_upload(file_path,new_name):
     driver_service = get_service()
 
-    with open(old_name, 'rb') as f:
+    with open(file_path, 'rb') as f:
         io_temp = io.BytesIO()
         encrypt_file(f, key, io_temp)
         file_metadata = {'name': new_name}
         new_id = upload_file(driver_service, io_temp, file_metadata)
 
-        #Mover a destino final
-        # en este punto renombro al id para futura referencia
-        out_path = os.path.join(folder_out,"{0}.out".format(new_id))
-        shutil.move(old_name,out_path)
-     
+    return new_id
 
 
-def upload_list_and_move(data_list):
-    for d in data_list:
-        (new_name,old_name) = d['nombre_obj'],d['nombre_old']
-        process_single_file(new_name,old_name)
-
+@lru_cache(maxsize=32)
+def download_or_get_cached(file_id):
+    temp_io = io.BytesIO()
+    drive_service = get_service()
+    download_file(drive_service, file_id, temp_io)
+    return temp_io
     
 
 def download_and_decript(file_id, fd_out):
-    drive_service = get_service()
-    temp_io = io.BytesIO()
-
-    download_file(drive_service, file_id, temp_io)
+    temp_io = download_or_get_cached(file_id)
     temp_io.seek(0)
-    decrypt_file(temp_io, key, fd_out)
+    decrypt_file(temp_io, key, fd_out) # todo cached decript ??
+    print(download_or_get_cached.cache_info())
 
 
 

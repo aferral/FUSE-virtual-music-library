@@ -1,0 +1,274 @@
+#!/usr/bin/env python
+from __future__ import print_function, absolute_import, division
+from pwd import getpwnam 
+import grp
+import logging
+import io
+from errno import EACCES
+from os.path import realpath
+from sys import argv, exit
+from threading import Lock
+from datetime import datetime
+import os
+from stat import S_IFMT, S_IMODE, S_IFDIR, S_IFREG, S_IRWXU, S_IRGRP, S_IROTH
+from fuse import FUSE, FuseOSError, Operations
+import mutagen
+import io
+from data_manager import get_or_create_metadata_database
+from drive_utils import download_and_decript
+
+# crear lista de archivos segun db
+
+# todo create dummy for more music formats
+
+# todo ordenar por album mejor
+# todo mejorar metadata
+# todo descargar de forma eficiente
+
+# add lyrics
+
+
+class LoggingMixIn:
+    log = logging.getLogger('fuse.log-mixin')
+
+    def __call__(self, op, path, *args):
+        self.log.debug('-> %s %s ', op, path)
+        ret = '[Unhandled Exception]'
+        try:
+            ret = getattr(self, op)(path, *args)
+            return ret
+        except OSError as e:
+            ret = str(e)
+            raise
+        finally:
+            #self.log.debug('<- %s %s', op, repr(ret))
+            pass
+
+class Virtual_Library(LoggingMixIn, Operations):
+
+    def __init__(self,modo_dummy=True):
+
+        self.root = ''
+        print(self.root)
+
+        self.rwlock = Lock()
+
+        self.metadata_obj = get_or_create_metadata_database()
+        lista = self.metadata_obj.list(as_dict=True) 
+
+        all_dict = {}
+        # agrupa todos los discos por artista / album
+        for elem in lista:
+            artista=elem['Band'] if elem['Band'] != '' else 'No_info' 
+            album=elem['Album'] if elem['Album'] != '' else 'No_info'
+            all_dict.setdefault(artista,{}).setdefault(album,[]).append(elem)
+
+        file_dict={}
+        folder_dict={}
+
+        def c_name(d):
+            return "{0}_{1}_{2}.{3}".format(d['Song'],d['Album'],d['Band'],d['ext'])
+            pass
+
+        file_dict={}
+        folder_dict={}
+
+        def add(d,current_path):
+            for k in d:
+                if type(k) == dict:
+                    f_path = os.path.join(current_path,c_name(k))
+                    folder_dict.setdefault(current_path,[]).append(f_path)
+                    file_dict[f_path] = k
+                else:
+                    path_c = os.path.join(current_path,k)
+                    folder_dict.setdefault(current_path,[]).append(path_c)
+                    add(d[k],path_c)
+            return
+        add(all_dict,'/')
+
+        self.file_dict = file_dict
+        self.folder_dict = folder_dict
+
+
+        self.lista = self.metadata_obj.list(as_dict=True) # {'Band':b, 'Album':alb, 'Song' : s,'id_drive' : idd, 'size' , 'ext'}
+        self.data_dict = {}
+        self.library_rows = []
+        for d in self.lista:
+            file_name = c_name(d)
+            self.data_dict[file_name] = d    
+            self.library_rows.append(file_name)
+
+
+        # prepare dummy file for metadata
+        with open('base4.mp3','rb') as f:
+            self.dummy_buffer=io.BytesIO(f.read())
+        self.dummy_data = self.dummy_buffer.read()
+        self.dummy_buffer.seek(0)
+
+        self.len_dummy_data=len(self.dummy_data)
+
+        self.dummy=modo_dummy
+
+    
+
+    
+    listxattr = None
+    getxattr = None
+    utimens = os.utime
+
+    def convert_to_full(self,path):
+        return os.path.join(self.root,path[1:] if path[0] == os.path.sep else path)
+
+
+    def create_dumm_file(self,metadata):
+        self.dummy_buffer.seek(0)
+        org=mutagen.File(self.dummy_buffer,easy=True)
+        org['artist'] = metadata['Band']
+        org['title'] = metadata['Song']
+        org['album'] = metadata['Album']
+
+        xb = io.BytesIO(self.dummy_data)
+        xb.seek(0)
+        org.save(xb)
+        xb.seek(0)
+
+        return xb
+
+    def is_virtual_path(self,path):
+        is_folder = path in self.folder_dict
+        is_file = path in self.file_dict
+        #print(self.folder_dict)
+        return is_folder,is_file
+
+    def access(self, path, mode):
+        access = any(self.is_virtual_path(path)) 
+        if access:
+            return
+
+        full_path = self.convert_to_full(path)
+        print('Access {0} , {1}'.format(path,full_path))
+        if not os.access(full_path, mode):
+            print("DOESNT HAVE PERMISSIONS {0} {1}".format(full_path,mode))
+            raise FuseOSError(EACCES)
+
+
+
+    def getattr(self, path, fh=None):
+        def dummy_descrp():
+            out = {}
+            out['st_atime'] = datetime.now().timestamp()*1.0
+            out['st_ctime'] = datetime.now().timestamp()*1.0
+            out['st_mtime'] = datetime.now().timestamp()*1.0
+            out['st_gid'] = grp.getgrnam('aferral').gr_gid
+            out['st_mode']= S_IFREG | S_IRWXU | S_IRGRP | S_IROTH
+            out['st_nlink']= 1
+            out['st_size']= self.len_dummy_data
+            out['st_uid']= getpwnam('aferral').pw_uid
+            return out 
+
+        # print("pt: {0}".format(path))
+        def parse_real(x):
+            st = os.lstat(x)
+            return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
+            'st_gid', 'st_mode', 'st_mtime', 'st_nlink', 'st_size', 'st_uid'))
+
+
+        is_folder,is_file=self.is_virtual_path(path)
+        print('Path {0} isfol {1} isf {2}'.format(path,is_folder,is_file))
+
+        if is_folder:
+            data_descp = dummy_descrp()
+            data_descp['st_size'] = 4096
+            data_descp['st_mode']= S_IFDIR | S_IRWXU | S_IRGRP | S_IROTH
+            data_descp['st_nlink'] = len(self.folder_dict[path]) 
+            print(data_descp)
+            return data_descp
+        elif is_file:
+            # print("Special path: {0}".format(resto))
+            data = self.file_dict[path]
+            data_descp = dummy_descrp()
+            if not self.dummy:
+                data_descp['st_size'] = data['size'] 
+            return data_descp
+        else:
+            full_path = self.convert_to_full(path)
+            print("New path {0} {1}".format(path,full_path))
+
+            return parse_real(full_path)
+            
+
+
+
+    def read(self, path, size, offset, fh):
+
+        is_folder,is_file=self.is_virtual_path(path) 
+
+        with self.rwlock:
+
+
+            if is_file:
+                # print("Special path: {0}".format(resto))
+                metadata = self.file_dict[path]
+                
+    
+
+                if self.dummy:
+                    return self.create_dumm_file(metadata).read(size)
+
+                else:
+                    id_file = metadata['id_drive']
+                    temp_io = io.BytesIO()
+                    download_and_decript(id_file, temp_io)
+                    temp_io.seek(offset)
+                    return temp_io.read(size)
+            else:
+                full_path = self.convert_to_full(path)
+                return os.open(full_path).seek(offset).read(size)
+
+    def opendir(self,path):
+        print('OPEN DIR {0}'.format(path))
+        is_folder,is_file=self.is_virtual_path(path) 
+        if is_folder:
+            return 0
+        
+        res=super().opendir(path)
+        print(res)
+        return res
+
+    def readdir(self, path, fh):
+        is_folder,is_file=self.is_virtual_path(path) 
+
+        dirents = ['.', '..']
+
+        if is_folder:
+            print("Path: {0} {1}".format(path,self.folder_dict[path]))
+            to_return = list(map(lambda x : x[1:] if x[0] == os.path.sep else x ,self.folder_dict[path]))
+            to_return = list(map(lambda x : os.path.split(x)[-1] ,self.folder_dict[path]))
+            dirents += to_return
+
+        else:
+            full_path = self.convert_to_full(path)
+            if os.path.isdir(full_path):
+                dirents.extend(os.listdir(full_path))
+        print(dirents)
+        return dirents 
+
+
+
+
+import argparse
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Start the virtual filesystem')
+    parser.add_argument('--dummy', action='store_true',help='Dont download the files just create dummy files with the metadata')
+    parser.add_argument('mountpoint',help='Where to place the virtualFolder')
+    args = parser.parse_args()
+
+    mountpoint = args.mountpoint
+    dummy = args.dummy
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    vl = Virtual_Library(modo_dummy=dummy)
+
+    fuse = FUSE(vl, mountpoint, foreground=True, nothreads=True)

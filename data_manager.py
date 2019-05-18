@@ -14,13 +14,18 @@ CREATE TABLE metadata
      TPE1 varchar(30),
      TPE2 varchar(30),
      TALB varchar(30),
-     id_file varchar(50)
+     id_file varchar(50) NOT NULL,
+     extension varchar(10),
+     size integer
     );
 
 """
 db_insert_query = """
-INSERT INTO metadata (TIT2,TPE1,TPE2,TALB,id_file) VALUES (:titulo,:artistaA,:artistaB,:album,:id_drive) ;
+INSERT INTO metadata (TIT2,TPE1,TPE2,TALB,id_file,extension,size) VALUES (:titulo,:artistaA,:artistaB,:album,:id_drive,:ext,:size) ;
 """
+
+
+
 
 def create_db_structure(db):
     cursor = db.cursor()
@@ -39,8 +44,11 @@ class metadata_database:
 
         self.db_obj = db_obj
 
-    def insert(self):
-        pass
+    def insert(self,vals):
+        c=self.db_obj.cursor()
+        c.execute(db_insert_query,vals)
+        c.close()
+        self.db_obj.commit()
 
 
     def batch_insert(self,data_in_list):
@@ -60,16 +68,26 @@ class metadata_database:
         out_val = '\n'.join(map(format_row,res))
         return out_val
 
-    def list(self):
-        out = ""
+    def list(self,as_dict=False):
+        
+        data=[]
+
         c=self.db_obj.cursor()
-        c.execute("Select TIT2,TPE1,TPE2,TALB,id_file from metadata")
+        c.execute("Select TIT2,TPE1,TPE2,TALB,id_file,extension,size from metadata")
         for elem in c:
-            s, aa, ab, alb, idd = list(map(lambda x : x if x is not None else '-',elem))
+            s, aa, ab, alb, idd,ext,size = list(map(lambda x : x if x is not None else '-',elem))
             b= aa if aa == ab else "{0},{1}".format(aa,ab)
-            out += "{Song} | {Album} | {Band}  ,, {id_drive}\n".format(Band=b, Album=alb, Song=s,id_drive=idd)
+            data.append({'Band':b, 'Album':alb, 'Song' : s,'id_drive' : idd,'size' : size,'ext' : ext})
         c.close()
-        return out
+
+
+        if as_dict:
+            return data
+        else:
+            out = ""
+            for d in data:
+                out += "{Song} | {Album} | {Band}  ,, {id_drive}\n".format(**d)
+            return out
 
 
 
@@ -84,7 +102,7 @@ def get_or_create_metadata_database():
     return metadata_database(db)
 
 
-def add_to_default_db(folder_with_ids): # folder with files id.out
+def add_metadata(file_path,id_file,size,ext):
     x = get_or_create_metadata_database()
 
     def parse_val(mtd,key_list):
@@ -96,29 +114,22 @@ def add_to_default_db(folder_with_ids): # folder with files id.out
         else:
             return None
 
-    all_files = os.listdir(folder_with_ids)
-
     album_tags = set(['album','TALB','ALBUM','Album'])
     track_title_tags = set(['title','TIT2','TITLE','Title'])
     artistA_tags = set(['TPE1','ARTIST','Artist','Author','artist'])
     artistB_tags = set(['albumartist','TPE2','ALBUMARTIST','Album Artist'])
 
-    all_vals = []
-    for elem in all_files:
-        id_drive = elem.split('.')[0]
-        metadata_obj = get_metadata(os.path.join(folder_with_ids,elem))
+    metadata_obj = get_metadata(os.path.join(folder_with_ids,elem))
 
-        TPE1 = parse_val(metadata_obj,artistA_tags)
-        TPE2 = parse_val(metadata_obj,artistB_tags)
-        TALB = parse_val(metadata_obj,album_tags)
-        TIT2 = parse_val(metadata_obj,track_title_tags)
-        if (TIT2 is None) and (TPE1 is None) and (TPE2 is None):
-            print('{0} No hay suficientes tags para subir a DB arreglar tags '.format(elem))
-            continue
-        d={'titulo' : TIT2,'artistaA':TPE1,'artistaB':TPE2,'album':TALB,'id_drive':id_drive}
-        all_vals.append(d)
-
-    x.batch_insert(all_vals)
+    TPE1 = parse_val(metadata_obj,artistA_tags)
+    TPE2 = parse_val(metadata_obj,artistB_tags)
+    TALB = parse_val(metadata_obj,album_tags)
+    TIT2 = parse_val(metadata_obj,track_title_tags)
+    
+    assert((TIT2 is not None) or (TPE1 is not None) or (TPE2 is not None)),'{0} No hay suficientes tags para subir a DB arreglar tags '.format(elem)
+        
+    d={'titulo' : TIT2,'artistaA':TPE1,'artistaB':TPE2,'album':TALB,'id_drive':id_drive,'ext': ext,'size':size}
+    x.insert(d)
 
 
 
