@@ -56,7 +56,11 @@ class Virtual_Library(LoggingMixIn, Operations):
         self.metadata_obj = get_or_create_metadata_database()
         lista = self.metadata_obj.list(as_dict=True) 
 
+        self.dummy=modo_dummy
+
+
         all_dict = {}
+
         # agrupa todos los discos por artista / album
         for elem in lista:
             artista=elem['Band'] if elem['Band'] != '' else 'No_info' 
@@ -98,20 +102,20 @@ class Virtual_Library(LoggingMixIn, Operations):
             self.data_dict[file_name] = d    
             self.library_rows.append(file_name)
 
+        # Prepare dummy files
+        folder_with_dummys = 'dummy_files'
+        self.dummy_dict = {}
+        for d_path in os.listdir(folder_with_dummys):
+            ext = d_path.split('.')[-1]
+            f_path = os.path.join(folder_with_dummys,d_path)
+            # prepare dummy file for metadata
+            with open(f_path,'rb') as f:
+                b_buffer=io.BytesIO(f.read())
+            data_dummy = b_buffer.read()
+            len_data_dummy = len(data_dummy)
 
-        # prepare dummy file for metadata
-        with open('base4.mp3','rb') as f:
-            self.dummy_buffer=io.BytesIO(f.read())
-        self.dummy_data = self.dummy_buffer.read()
-        self.dummy_buffer.seek(0)
+            self.dummy_dict[ext] = {'buffer' : b_buffer, 'data' : data_dummy, 'len' : len_data_dummy} 
 
-        self.len_dummy_data=len(self.dummy_data)
-
-        self.dummy=modo_dummy
-
-    
-
-    
     listxattr = None
     getxattr = None
     utimens = os.utime
@@ -121,13 +125,18 @@ class Virtual_Library(LoggingMixIn, Operations):
 
 
     def create_dumm_file(self,metadata):
-        self.dummy_buffer.seek(0)
-        org=mutagen.File(self.dummy_buffer,easy=True)
+        ext = metadata['ext']
+        d = self.dummy_dict[ext]
+        t_buffer = d['buffer']
+        t_data = d['data']
+
+        t_buffer.seek(0)
+        org=mutagen.File(t_buffer,easy=True)
         org['artist'] = metadata['Band']
         org['title'] = metadata['Song']
         org['album'] = metadata['Album']
 
-        xb = io.BytesIO(self.dummy_data)
+        xb = io.BytesIO(t_data)
         xb.seek(0)
         org.save(xb)
         xb.seek(0)
@@ -156,15 +165,16 @@ class Virtual_Library(LoggingMixIn, Operations):
     def getattr(self, path, fh=None):
         def dummy_descrp():
             out = {}
+
             out['st_atime'] = datetime.now().timestamp()*1.0
             out['st_ctime'] = datetime.now().timestamp()*1.0
             out['st_mtime'] = datetime.now().timestamp()*1.0
-            out['st_gid'] = grp.getgrnam('aferral').gr_gid
+            out['st_gid'] = grp.getgrnam('aferral').gr_gid  # TODO THIS IS NOT GENERIC
             out['st_mode']= S_IFREG | S_IRWXU | S_IRGRP | S_IROTH
             out['st_nlink']= 1
-            out['st_size']= self.len_dummy_data
+            out['st_size']= 1
             out['st_uid']= getpwnam('aferral').pw_uid
-            return out 
+            return out
 
         # print("pt: {0}".format(path))
         def parse_real(x):
@@ -180,22 +190,29 @@ class Virtual_Library(LoggingMixIn, Operations):
             data_descp = dummy_descrp()
             data_descp['st_size'] = 4096
             data_descp['st_mode']= S_IFDIR | S_IRWXU | S_IRGRP | S_IROTH
-            data_descp['st_nlink'] = len(self.folder_dict[path]) 
+            data_descp['st_nlink'] = len(self.folder_dict[path])
             print(data_descp)
             return data_descp
         elif is_file:
             # print("Special path: {0}".format(resto))
+
             data = self.file_dict[path]
             data_descp = dummy_descrp()
             if not self.dummy:
-                data_descp['st_size'] = data['size'] 
+                size = data['size']
+            else:
+                ext=data['ext']
+                size = self.dummy_dict[ext]['len']
+            data_descp['st_size'] = size
+
             return data_descp
+
+
         else:
             full_path = self.convert_to_full(path)
             print("New path {0} {1}".format(path,full_path))
 
             return parse_real(full_path)
-            
 
 
 
@@ -209,11 +226,11 @@ class Virtual_Library(LoggingMixIn, Operations):
             if is_file:
                 # print("Special path: {0}".format(resto))
                 metadata = self.file_dict[path]
-                
-    
 
                 if self.dummy:
-                    return self.create_dumm_file(metadata).read(size)
+                    temp_buffer = self.create_dumm_file(metadata)
+                    temp_buffer.seek(offset)
+                    return temp_buffer.read(size)
 
                 else:
                     id_file = metadata['id_drive']
@@ -230,7 +247,7 @@ class Virtual_Library(LoggingMixIn, Operations):
         is_folder,is_file=self.is_virtual_path(path) 
         if is_folder:
             return 0
-        
+
         res=super().opendir(path)
         print(res)
         return res

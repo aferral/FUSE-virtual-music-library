@@ -72,7 +72,7 @@ def get_service():
         with open('token.pickle', 'wb') as token:
             pickle.dump(creds, token)
 
-    service = build('drive', 'v3', credentials=creds,cache_discovery=False) 
+    service = build('drive', 'v3', credentials=creds,cache_discovery=False)
     return service
 
 
@@ -115,7 +115,7 @@ def download_or_get_cached(file_id):
     drive_service = get_service()
     download_file(drive_service, file_id, temp_io)
     return temp_io
-    
+
 
 def download_and_decript(file_id, fd_out):
     temp_io = download_or_get_cached(file_id)
