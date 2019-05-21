@@ -1,15 +1,17 @@
-from drive_utils import valid_types, upload_list_and_move, folder_out
+from drive_utils import valid_types,  folder_out
 import os
 from datetime import datetime
-from data_manager import get_metadata, add_to_default_db
+from data_manager import get_metadata 
 import uuid
 import json
 import shutil
 
 import argparse
 import random
-from data_manager import get_or_create_metadata_database
-from drive_utils import download_and_decript, folder_out,folder_in
+from data_manager import get_or_create_metadata_database, add_metadata
+
+from drive_utils import download_and_decript, folder_out,folder_in, encript_and_upload
+
 
 # incorporar en pipeline https://github.com/ytdl-org/youtube-dl
 # incorporar https://github.com/beetbox/beets (O algo similar)
@@ -49,7 +51,7 @@ def full_process(file_path):
     ext = file_path.split('.')[-1]
 
     # add metadata to DB
-    add_metadata(file_path,id_file,size,ext)
+    add_metadata(file_path,new_id,size,ext)
 
     # move to out_path
     out_path = os.path.join(folder_out, file_path.replace(os.path.sep,'_') )
@@ -59,9 +61,11 @@ def full_process(file_path):
 def scan_folder(path): # generate metadata from folder
     files = [os.path.join(dp, f) for dp, dn, filenames in os.walk(path) for f in filenames]
     data_list = []
-    for elem in files:
+    n=len(files)
+    for ind,elem in enumerate(files):
         ext = elem.split('.')[-1]
         if ext in valid_types:
+            print("Processing {0} {1}/{2}".format(elem,ind,n))
             full_process(elem)
         else:
             print("Skiping {0} -- {1} --  not in valid types".format(elem,ext.capitalize()))

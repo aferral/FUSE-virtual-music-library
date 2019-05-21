@@ -36,7 +36,7 @@ def create_db_structure(db):
 
 
 def get_metadata(filename):
-    return mutagen.File(filename)
+    return mutagen.File(filename,easy=True)
 
 
 class metadata_database:
@@ -119,16 +119,16 @@ def add_metadata(file_path,id_file,size,ext):
     artistA_tags = set(['TPE1','ARTIST','Artist','Author','artist'])
     artistB_tags = set(['albumartist','TPE2','ALBUMARTIST','Album Artist'])
 
-    metadata_obj = get_metadata(os.path.join(folder_with_ids,elem))
+    metadata_obj = get_metadata(file_path)
 
     TPE1 = parse_val(metadata_obj,artistA_tags)
     TPE2 = parse_val(metadata_obj,artistB_tags)
     TALB = parse_val(metadata_obj,album_tags)
     TIT2 = parse_val(metadata_obj,track_title_tags)
     
-    assert((TIT2 is not None) or (TPE1 is not None) or (TPE2 is not None)),'{0} No hay suficientes tags para subir a DB arreglar tags '.format(elem)
+    assert((TIT2 is not None) or (TPE1 is not None) or (TPE2 is not None)),'{0} No hay suficientes tags para subir a DB arreglar tags '.format(file_path)
         
-    d={'titulo' : TIT2,'artistaA':TPE1,'artistaB':TPE2,'album':TALB,'id_drive':id_drive,'ext': ext,'size':size}
+    d={'titulo' : TIT2,'artistaA':TPE1,'artistaB':TPE2,'album':TALB,'id_drive':id_file,'ext': ext,'size':size}
     x.insert(d)
 
 
