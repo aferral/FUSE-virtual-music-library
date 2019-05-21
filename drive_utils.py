@@ -14,14 +14,17 @@ import hashlib
 import os.path
 import hashlib
 import tempfile
+import logging
+from config_parse import folder_output, folder_input, drive_st_folder,default_cred_dict, cache_size 
 
-folder_in = 'files_to_upload'
-folder_out = 'files_to_delete'
+log = logging.getLogger('fuse.log-mixin')
+folder_out = folder_output
+folder_in = folder_input
 os.makedirs(folder_in,exist_ok=True)
 os.makedirs(folder_out,exist_ok=True)
-valid_types = ['mp3','flac','opus','ogg','m4a']
 
-FOLDER_ID = '13cjZpYDNAy2N_mMh3sdH-muFWpkgzLTQ'
+valid_types = ['mp3','flac','opus','ogg','m4a']
+FOLDER_ID = drive_st_folder
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
@@ -49,24 +52,19 @@ def calc_checksum(fd):
 
 
 
-def get_service():
-    """Shows basic usage of the Drive v3 API.
-      Prints the names and ids of the first 10 files the user has access to.
-      """
+def get_service(cred_dict=None):
     creds = None
-    # The file token.pickle stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
     if os.path.exists('token.pickle'):
         with open('token.pickle', 'rb') as token:
             creds = pickle.load(token)
-    # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
+            if cred_dict is None:
+                flow = InstalledAppFlow.from_client_config(default_cred_dict, SCOPES)
+            else:
+                flow = InstalledAppFlow.from_client_config(cred_dict,SCOPES)
             creds = flow.run_local_server()
         # Save the credentials for the next run
         with open('token.pickle', 'wb') as token:
@@ -78,12 +76,30 @@ def get_service():
 
 
 def download_file(drive_service, file_id,out_fd):
-    print('CALLING GET')
+    log.info('Calling GET')
     request = drive_service.files().get_media(fileId=file_id)
     downloader = MediaIoBaseDownload(out_fd, request)
     done = False
     while done is False:
         status, done = downloader.next_chunk()
+
+def encript_update_file(drive_id, file_path, new_name):
+    key_to_use = key
+    driver_service = get_service()
+
+    with open(file_path, 'rb') as fd:
+        io_temp = io.BytesIO()
+        encrypt_file(fd, key_to_use, io_temp)
+        file_metadata = {'name': new_name}
+
+        media = MediaIoBaseUpload(io_temp,'/enc')
+        metadata['parents'] = [FOLDER_ID]
+
+        file_res = driver_service.files().update(fileId=drive_id, body=metadata,media_body=media,fields='id,md5Checksum').execute()
+        checksum = file_res.get('md5Checksum')
+        origin_chk = calc_checksum(io_temp)
+        assert(checksum == origin_chk)
+
 
 def upload_file(driver_service,fd,metadata,parent_folder=FOLDER_ID):
 
@@ -97,19 +113,20 @@ def upload_file(driver_service,fd,metadata,parent_folder=FOLDER_ID):
     return new_id
 
 
-def encript_and_upload(file_path,new_name):
-    driver_service = get_service()
+def encript_and_upload(file_path,new_name,e_key=None,drive_s=None):
+    driver_service = get_service() if drive_s is None else drive_s
+    key_to_use = key if e_key is None else e_key
 
     with open(file_path, 'rb') as f:
         io_temp = io.BytesIO()
-        encrypt_file(f, key, io_temp)
+        encrypt_file(f, key_to_use, io_temp)
         file_metadata = {'name': new_name}
         new_id = upload_file(driver_service, io_temp, file_metadata)
 
     return new_id
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=cache_size)
 def download_or_get_cached(file_id):
     temp_io = io.BytesIO()
     drive_service = get_service()
@@ -120,8 +137,8 @@ def download_or_get_cached(file_id):
 def download_and_decript(file_id, fd_out):
     temp_io = download_or_get_cached(file_id)
     temp_io.seek(0)
-    decrypt_file(temp_io, key, fd_out) # todo cached decript ??
-    print(download_or_get_cached.cache_info())
+    decrypt_file(temp_io, key, fd_out) 
+    log.info(download_or_get_cached.cache_info())
 
 
 

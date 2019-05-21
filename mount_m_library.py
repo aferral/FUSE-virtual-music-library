@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-from __future__ import print_function, absolute_import, division
+from getpass import getuser
 from pwd import getpwnam 
 import grp
 import logging
 import io
+import errno
 from errno import EACCES
 from os.path import realpath
 from sys import argv, exit
@@ -16,34 +17,23 @@ import mutagen
 import io
 from data_manager import get_or_create_metadata_database
 from drive_utils import download_and_decript
+from fuse import FuseOSError
 
-# crear lista de archivos segun db
 
-# todo create dummy for more music formats
 
-# todo ordenar por album mejor
-# todo mejorar metadata
-# todo descargar de forma eficiente
-
-# add lyrics
-
+log = logging.getLogger('fuse')
 
 class LoggingMixIn:
-    log = logging.getLogger('fuse.log-mixin')
 
     def __call__(self, op, path, *args):
-        self.log.debug('-> %s %s ', op, path)
-        ret = '[Unhandled Exception]'
+        log.debug('-> %s %s ', op, path)
         try:
             ret = getattr(self, op)(path, *args)
             return ret
         except OSError as e:
             ret = str(e)
-            raise
-        finally:
-            #self.log.debug('<- %s %s', op, repr(ret))
-            pass
-
+            log.exception(ret)
+            raise e
 class Virtual_Library(LoggingMixIn, Operations):
 
     def __init__(self,modo_dummy=True):
@@ -112,9 +102,8 @@ class Virtual_Library(LoggingMixIn, Operations):
             with open(f_path,'rb') as f:
                 b_buffer=io.BytesIO(f.read())
             data_dummy = b_buffer.read()
-            len_data_dummy = len(data_dummy)
 
-            self.dummy_dict[ext] = {'buffer' : b_buffer, 'data' : data_dummy, 'len' : len_data_dummy} 
+            self.dummy_dict[ext] = {'buffer' : b_buffer, 'data' : data_dummy} 
 
     listxattr = None
     getxattr = None
@@ -140,13 +129,11 @@ class Virtual_Library(LoggingMixIn, Operations):
         xb.seek(0)
         org.save(xb)
         xb.seek(0)
-
         return xb
 
     def is_virtual_path(self,path):
         is_folder = path in self.folder_dict
         is_file = path in self.file_dict
-        #print(self.folder_dict)
         return is_folder,is_file
 
     def access(self, path, mode):
@@ -155,7 +142,7 @@ class Virtual_Library(LoggingMixIn, Operations):
             return
 
         full_path = self.convert_to_full(path)
-        print('Access {0} , {1}'.format(path,full_path))
+        log.info('Access {0} , {1}'.format(path,full_path))
         if not os.access(full_path, mode):
             print("DOESNT HAVE PERMISSIONS {0} {1}".format(full_path,mode))
             raise FuseOSError(EACCES)
@@ -164,19 +151,19 @@ class Virtual_Library(LoggingMixIn, Operations):
 
     def getattr(self, path, fh=None):
         def dummy_descrp():
+            current_user=getuser()
             out = {}
 
             out['st_atime'] = datetime.now().timestamp()*1.0
             out['st_ctime'] = datetime.now().timestamp()*1.0
             out['st_mtime'] = datetime.now().timestamp()*1.0
-            out['st_gid'] = grp.getgrnam('aferral').gr_gid  # TODO THIS IS NOT GENERIC
+            out['st_gid'] = grp.getgrnam(current_user).gr_gid
             out['st_mode']= S_IFREG | S_IRWXU | S_IRGRP | S_IROTH
             out['st_nlink']= 1
             out['st_size']= 1
-            out['st_uid']= getpwnam('aferral').pw_uid
+            out['st_uid']= getpwnam(current_user).pw_uid
             return out
 
-        # print("pt: {0}".format(path))
         def parse_real(x):
             st = os.lstat(x)
             return dict((key, getattr(st, key)) for key in ('st_atime', 'st_ctime',
@@ -184,17 +171,15 @@ class Virtual_Library(LoggingMixIn, Operations):
 
 
         is_folder,is_file=self.is_virtual_path(path)
-        print('Path {0} isfol {1} isf {2}'.format(path,is_folder,is_file))
+        log.info('Path {0} isfol {1} isf {2}'.format(path,is_folder,is_file))
 
         if is_folder:
             data_descp = dummy_descrp()
             data_descp['st_size'] = 4096
             data_descp['st_mode']= S_IFDIR | S_IRWXU | S_IRGRP | S_IROTH
             data_descp['st_nlink'] = len(self.folder_dict[path])
-            print(data_descp)
             return data_descp
         elif is_file:
-            # print("Special path: {0}".format(resto))
 
             data = self.file_dict[path]
             data_descp = dummy_descrp()
@@ -202,7 +187,8 @@ class Virtual_Library(LoggingMixIn, Operations):
                 size = data['size']
             else:
                 ext=data['ext']
-                size = self.dummy_dict[ext]['len']
+                temp_buffer = self.create_dumm_file(data)
+                size = len(temp_buffer.read())
             data_descp['st_size'] = size
 
             return data_descp
@@ -210,7 +196,6 @@ class Virtual_Library(LoggingMixIn, Operations):
 
         else:
             full_path = self.convert_to_full(path)
-            print("New path {0} {1}".format(path,full_path))
 
             return parse_real(full_path)
 
@@ -224,7 +209,6 @@ class Virtual_Library(LoggingMixIn, Operations):
 
 
             if is_file:
-                # print("Special path: {0}".format(resto))
                 metadata = self.file_dict[path]
 
                 if self.dummy:
@@ -243,13 +227,11 @@ class Virtual_Library(LoggingMixIn, Operations):
                 return os.open(full_path).seek(offset).read(size)
 
     def opendir(self,path):
-        print('OPEN DIR {0}'.format(path))
         is_folder,is_file=self.is_virtual_path(path) 
         if is_folder:
             return 0
 
         res=super().opendir(path)
-        print(res)
         return res
 
     def readdir(self, path, fh):
@@ -258,7 +240,6 @@ class Virtual_Library(LoggingMixIn, Operations):
         dirents = ['.', '..']
 
         if is_folder:
-            print("Path: {0} {1}".format(path,self.folder_dict[path]))
             to_return = list(map(lambda x : x[1:] if x[0] == os.path.sep else x ,self.folder_dict[path]))
             to_return = list(map(lambda x : os.path.split(x)[-1] ,self.folder_dict[path]))
             dirents += to_return
@@ -267,24 +248,26 @@ class Virtual_Library(LoggingMixIn, Operations):
             full_path = self.convert_to_full(path)
             if os.path.isdir(full_path):
                 dirents.extend(os.listdir(full_path))
-        print(dirents)
         return dirents 
 
 
 
 
 import argparse
+from config_parse import mountpoint
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Start the virtual filesystem')
     parser.add_argument('--dummy', action='store_true',help='Dont download the files just create dummy files with the metadata')
-    parser.add_argument('mountpoint',help='Where to place the virtualFolder')
+    parser.add_argument('--verbose','-v',help='Show debug information',action='store_true'),
     args = parser.parse_args()
 
-    mountpoint = args.mountpoint
-    dummy = args.dummy
+    # Make mountpoint folder 
+    os.makedirs(mountpoint,exist_ok=True)
 
-    logging.basicConfig(level=logging.DEBUG)
+    dummy = args.dummy
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
 
     vl = Virtual_Library(modo_dummy=dummy)
 

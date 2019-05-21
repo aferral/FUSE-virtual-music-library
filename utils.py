@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-
+# From https://stackoverflow.com/questions/20852664/python-pycrypto-encrypt-decrypt-text-files-with-aes
 from Crypto import Random
 from Crypto.Cipher import AES
 import json

@@ -2,7 +2,10 @@ import mutagen
 import os
 import io
 import sqlite3
-
+from config_parse import drive_metadata_id
+from drive_utils import download_and_decript
+from functools import lru_cache
+from datetime import datetime 
 default_sql_lite = 'meta.db'
 
 
@@ -24,6 +27,13 @@ db_insert_query = """
 INSERT INTO metadata (TIT2,TPE1,TPE2,TALB,id_file,extension,size) VALUES (:titulo,:artistaA,:artistaB,:album,:id_drive,:ext,:size) ;
 """
 
+@lru_cache(maxsize=1)
+def get_from_remote():
+    download_time = datetime.now()
+    with open(default_sql_lite,'wb') as f:
+        download_and_decript(drive_metadata_id, f)
+
+    return download_time
 
 
 
@@ -64,7 +74,7 @@ class metadata_database:
         c.close()
 
         def format_row(t_row):
-            return ','.join(map(str,t_row)) # todo escape strings ??
+            return ','.join(map(str,t_row))
         out_val = '\n'.join(map(format_row,res))
         return out_val
 
@@ -76,7 +86,7 @@ class metadata_database:
         c.execute("Select TIT2,TPE1,TPE2,TALB,id_file,extension,size from metadata")
         for elem in c:
             s, aa, ab, alb, idd,ext,size = list(map(lambda x : x if x is not None else '-',elem))
-            b= aa if aa == ab else "{0},{1}".format(aa,ab)
+            b= aa
             data.append({'Band':b, 'Album':alb, 'Song' : s,'id_drive' : idd,'size' : size,'ext' : ext})
         c.close()
 
@@ -98,6 +108,10 @@ def get_or_create_metadata_database():
         create_db_structure(db)
     else:
         db = sqlite3.connect(default_sql_lite)
+
+    # GET FILE FROM DRIVE
+    downloaded_when = get_from_remote()
+    print('Using db meta from {1} '.format(downloaded_when))
 
     return metadata_database(db)
 
