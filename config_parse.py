@@ -2,16 +2,30 @@ import configparser
 from collections import OrderedDict
 import os
 import json
-
+import sys
 """
-TODO END DOCUMENTATION
-
 Config values:
 
 [drive_api]
-Parameters of the google drive api. Leave blank to try automatic setup
+Parameters of the google drive api. Go to https://developers.google.com/drive/api/v3/quickstart/python and get credentials.json . Also you could use the steps in the README.
 
-[folder]
+[remote]
+drive_storage_folder_id : drive_id of the folder to use as storage.
+
+drive_metadata_db_id :   file_id of the meta.db file if you dont have one create a dummy file and get the drive_id . Then run upload_in_folder.py and the file will be updated.
+
+
+[local_folders]
+folder_input : Folder used by upload_in_folder.py as the input
+folder_ouput : Folder where upload_in_folder.py places procesed files.
+mountpoint : Where to place the virtual directory with the library.
+
+[encription]
+key : 32 chars key for encription
+
+
+[virtual_library]
+cache_size : The virtual library has a cache to avoid multiple requests. Recomended size = 32
 
 
 """
@@ -65,7 +79,7 @@ if not os.path.exists(config_path):
     # write config to disk
     with open(config_path,'w') as f:
         config.write(f)
-    exit(0)
+    sys.exit(0)
 
 # read config 
 with open(config_path) as f:

@@ -51,7 +51,7 @@ class Virtual_Library(LoggingMixIn, Operations):
 
         all_dict = {}
 
-        # agrupa todos los discos por artista / album
+        # Group by Artist / Album
         for elem in lista:
             artista=elem['Band'] if elem['Band'] != '' else 'No_info' 
             album=elem['Album'] if elem['Album'] != '' else 'No_info'

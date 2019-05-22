@@ -93,15 +93,14 @@ def encript_update_file(drive_id, file_path, new_name):
         file_metadata = {'name': new_name}
 
         media = MediaIoBaseUpload(io_temp,'/enc')
-        metadata['parents'] = [FOLDER_ID]
 
-        file_res = driver_service.files().update(fileId=drive_id, body=metadata,media_body=media,fields='id,md5Checksum').execute()
+        file_res = driver_service.files().update(fileId=drive_id, body=file_metadata,media_body=media,fields='id,md5Checksum').execute()
         checksum = file_res.get('md5Checksum')
         origin_chk = calc_checksum(io_temp)
         assert(checksum == origin_chk)
 
 
-def upload_file(driver_service,fd,metadata,parent_folder=FOLDER_ID):
+def upload_file(driver_service,fd,metadata,parent_folder):
 
     media = MediaIoBaseUpload(fd,'/enc')
     metadata['parents'] = [parent_folder]
@@ -113,7 +112,7 @@ def upload_file(driver_service,fd,metadata,parent_folder=FOLDER_ID):
     return new_id
 
 
-def encript_and_upload(file_path,new_name,e_key=None,drive_s=None):
+def encript_and_upload(file_path,new_name,e_key=None,drive_s=None,parent_folder=FOLDER_ID):
     driver_service = get_service() if drive_s is None else drive_s
     key_to_use = key if e_key is None else e_key
 
@@ -121,7 +120,7 @@ def encript_and_upload(file_path,new_name,e_key=None,drive_s=None):
         io_temp = io.BytesIO()
         encrypt_file(f, key_to_use, io_temp)
         file_metadata = {'name': new_name}
-        new_id = upload_file(driver_service, io_temp, file_metadata)
+        new_id = upload_file(driver_service, io_temp, file_metadata,parent_folder)
 
     return new_id
 
@@ -142,30 +141,3 @@ def download_and_decript(file_id, fd_out):
 
 
 
-def main():
-    service = get_service()
-    # id carpeta con archivos o que contendra archivos
-    query_in_folder = "'13cjZpYDNAy2N_mMh3sdH-muFWpkgzLTQ' in parents"
-    query_search_folders = "mimeType = 'application/vnd.google-apps.folder'"
-
-
-    # Call the Drive v3 API
-    results = service.files().list(q=query_in_folder,pageSize=10, fields="nextPageToken, files(id, name,md5Checksum)").execute()
-    items = results.get('files', [])
-
-    if not items:
-        print('No files found.')
-    else:
-        print('Files:')
-        for item in items:
-            print(u'{0} ({1})'.format(item['name'], item['id']))
-
-    with open('tt.enc', 'rb') as f:
-        file_metadata = {'name': 'tt4.enc'}
-        upload_file(service, f, file_metadata)
-    # # descarga archivo temporal
-    # with open('a.enc', 'wb') as f2:
-    #     download_file(service, '1UPeBcDemo9OopoQwkVDHri2WHLC_A82K',f2)
-
-if __name__ == '__main__':
-    main()

@@ -101,17 +101,17 @@ class metadata_database:
 
 
 
-def get_or_create_metadata_database():
+def get_or_create_metadata_database(init=False):
+    # GET FILE FROM DRIVE
+    if not init:
+        downloaded_when = get_from_remote()
+        print('Using db meta from {0} '.format(downloaded_when))
 
     if not os.path.exists(default_sql_lite):
         db = sqlite3.connect(default_sql_lite)
         create_db_structure(db)
     else:
         db = sqlite3.connect(default_sql_lite)
-
-    # GET FILE FROM DRIVE
-    downloaded_when = get_from_remote()
-    print('Using db meta from {1} '.format(downloaded_when))
 
     return metadata_database(db)
 
@@ -140,7 +140,7 @@ def add_metadata(file_path,id_file,size,ext):
     TALB = parse_val(metadata_obj,album_tags)
     TIT2 = parse_val(metadata_obj,track_title_tags)
     
-    assert((TIT2 is not None) or (TPE1 is not None) or (TPE2 is not None)),'{0} No hay suficientes tags para subir a DB arreglar tags '.format(file_path)
+    assert((TIT2 is not None) or (TPE1 is not None) or (TPE2 is not None)),'{0} Not enought tags to index in DB '.format(file_path)
         
     d={'titulo' : TIT2,'artistaA':TPE1,'artistaB':TPE2,'album':TALB,'id_drive':id_file,'ext': ext,'size':size}
     x.insert(d)
