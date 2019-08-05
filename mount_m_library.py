@@ -11,7 +11,7 @@ from sys import argv, exit
 from threading import Lock
 from datetime import datetime
 import os
-from stat import S_IFMT, S_IMODE, S_IFDIR, S_IFREG, S_IRWXU, S_IRGRP, S_IROTH
+from stat import S_IFMT, S_IMODE, S_IFDIR, S_IFREG, S_IRWXU, S_IRGRP, S_IROTH, S_IXOTH
 from fuse import FUSE, FuseOSError, Operations
 import mutagen
 import io
@@ -158,7 +158,7 @@ class Virtual_Library(LoggingMixIn, Operations):
             out['st_ctime'] = datetime.now().timestamp()*1.0
             out['st_mtime'] = datetime.now().timestamp()*1.0
             out['st_gid'] = grp.getgrnam(current_user).gr_gid
-            out['st_mode']= S_IFREG | S_IRWXU | S_IRGRP | S_IROTH
+            out['st_mode']= S_IFREG | S_IRWXU | S_IRGRP | S_IROTH | S_IXOTH
             out['st_nlink']= 1
             out['st_size']= 1
             out['st_uid']= getpwnam(current_user).pw_uid
@@ -176,7 +176,7 @@ class Virtual_Library(LoggingMixIn, Operations):
         if is_folder:
             data_descp = dummy_descrp()
             data_descp['st_size'] = 4096
-            data_descp['st_mode']= S_IFDIR | S_IRWXU | S_IRGRP | S_IROTH
+            data_descp['st_mode']= S_IFDIR | S_IRWXU | S_IRGRP | S_IROTH | S_IXOTH
             data_descp['st_nlink'] = len(self.folder_dict[path])
             return data_descp
         elif is_file:
@@ -259,6 +259,7 @@ from config_parse import mountpoint
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Start the virtual filesystem')
     parser.add_argument('--dummy', action='store_true',help='Dont download the files just create dummy files with the metadata')
+    parser.add_argument('--allow_other', action='store_true',help='Allow other users to use fylesistem. REQUIRE user_allow_other in /etc/fuse.conf to work ')
     parser.add_argument('--verbose','-v',help='Show debug information',action='store_true'),
     args = parser.parse_args()
 
@@ -270,5 +271,6 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.DEBUG)
 
     vl = Virtual_Library(modo_dummy=dummy)
-
-    fuse = FUSE(vl, mountpoint, foreground=True, nothreads=True)
+    args = {'foreground' : True, 'nothreads' : True, 'allow_other' : args.allow_other}
+    
+    fuse = FUSE(vl, mountpoint, **args)
