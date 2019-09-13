@@ -19,6 +19,42 @@ from data_manager import get_or_create_metadata_database
 from drive_utils import download_and_decript
 from fuse import FuseOSError
 
+def get_folder_structure(db_obj):
+        
+    lista = db_obj.list(as_dict=True) 
+
+    all_dict = {}
+
+    # Group by Artist / Album
+    for elem in lista:
+        artista=elem['Band'] if elem['Band'] != '' else 'No_info' 
+        album=elem['Album'] if elem['Album'] != '' else 'No_info'
+        all_dict.setdefault(artista,{}).setdefault(album,[]).append(elem)
+
+    file_dict={}
+    folder_dict={}
+
+    def c_name(d):
+        return "{0}_{1}_{2}.{3}".format(d['Song'],d['Album'],d['Band'],d['ext'])
+        pass
+
+    file_dict={}
+    folder_dict={}
+
+    def add(d,current_path):
+        for k in d:
+            if type(k) == dict:
+                f_path = os.path.join(current_path,c_name(k))
+                folder_dict.setdefault(current_path,[]).append(f_path)
+                file_dict[f_path] = k
+            else:
+                path_c = os.path.join(current_path,k)
+                folder_dict.setdefault(current_path,[]).append(path_c)
+                add(d[k],path_c)
+        return
+    add(all_dict,'/')
+    
+    return file_dict,folder_dict
 
 
 log = logging.getLogger('fuse')
@@ -44,53 +80,13 @@ class Virtual_Library(LoggingMixIn, Operations):
         self.rwlock = Lock()
 
         self.metadata_obj = get_or_create_metadata_database()
-        lista = self.metadata_obj.list(as_dict=True) 
-
+        
         self.dummy=modo_dummy
 
-
-        all_dict = {}
-
-        # Group by Artist / Album
-        for elem in lista:
-            artista=elem['Band'] if elem['Band'] != '' else 'No_info' 
-            album=elem['Album'] if elem['Album'] != '' else 'No_info'
-            all_dict.setdefault(artista,{}).setdefault(album,[]).append(elem)
-
-        file_dict={}
-        folder_dict={}
-
-        def c_name(d):
-            return "{0}_{1}_{2}.{3}".format(d['Song'],d['Album'],d['Band'],d['ext'])
-            pass
-
-        file_dict={}
-        folder_dict={}
-
-        def add(d,current_path):
-            for k in d:
-                if type(k) == dict:
-                    f_path = os.path.join(current_path,c_name(k))
-                    folder_dict.setdefault(current_path,[]).append(f_path)
-                    file_dict[f_path] = k
-                else:
-                    path_c = os.path.join(current_path,k)
-                    folder_dict.setdefault(current_path,[]).append(path_c)
-                    add(d[k],path_c)
-            return
-        add(all_dict,'/')
-
+        file_dict,folder_dict = get_folder_structure(self.metadata_obj)
         self.file_dict = file_dict
         self.folder_dict = folder_dict
 
-
-        self.lista = self.metadata_obj.list(as_dict=True) # {'Band':b, 'Album':alb, 'Song' : s,'id_drive' : idd, 'size' , 'ext'}
-        self.data_dict = {}
-        self.library_rows = []
-        for d in self.lista:
-            file_name = c_name(d)
-            self.data_dict[file_name] = d    
-            self.library_rows.append(file_name)
 
         # Prepare dummy files
         folder_with_dummys = 'dummy_files'
