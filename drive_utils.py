@@ -27,31 +27,6 @@ valid_types = ['mp3','flac','opus','ogg','m4a']
 FOLDER_ID = drive_st_folder
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
-
-
-
-def hash_bytestr_iter(bytesiter, hasher, ashexstr=False):
-    for block in bytesiter:
-        hasher.update(block)
-    return hasher.hexdigest() if ashexstr else hasher.digest()
-
-def file_as_blockiter(afile, blocksize=65536):
-    with afile:
-        block = afile.read(blocksize)
-        while len(block) > 0:
-            yield block
-            block = afile.read(blocksize)
-
-
-def calc_checksum(fd):
-    fd.seek(0)
-    byte_iterable = file_as_blockiter(fd)
-    x=hash_bytestr_iter(byte_iterable, hashlib.md5(),ashexstr=True)
-    return x
-
-
-
-
 def get_service(cred_dict=None):
     creds = None
     if os.path.exists('token.pickle'):
@@ -72,6 +47,32 @@ def get_service(cred_dict=None):
 
     service = build('drive', 'v3', credentials=creds,cache_discovery=False)
     return service
+
+
+# carga servicio a nivel de modulo
+drive_service = get_service()
+
+
+# funciones extras
+
+def hash_bytestr_iter(bytesiter, hasher, ashexstr=False):
+    for block in bytesiter:
+        hasher.update(block)
+    return hasher.hexdigest() if ashexstr else hasher.digest()
+
+def file_as_blockiter(afile, blocksize=65536):
+    with afile:
+        block = afile.read(blocksize)
+        while len(block) > 0:
+            yield block
+            block = afile.read(blocksize)
+
+
+def calc_checksum(fd):
+    fd.seek(0)
+    byte_iterable = file_as_blockiter(fd)
+    x=hash_bytestr_iter(byte_iterable, hashlib.md5(),ashexstr=True)
+    return x
 
 
 
@@ -128,7 +129,6 @@ def encript_and_upload(file_path,new_name,e_key=None,drive_s=None,parent_folder=
 @lru_cache(maxsize=cache_size)
 def download_or_get_cached(file_id):
     temp_io = io.BytesIO()
-    drive_service = get_service()
     download_file(drive_service, file_id, temp_io)
     return temp_io
 

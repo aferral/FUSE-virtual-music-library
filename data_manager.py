@@ -101,11 +101,12 @@ class metadata_database:
 
 
 
-def get_or_create_metadata_database(init=False):
+def get_or_create_metadata_database(init=False,verbose=True):
     # GET FILE FROM DRIVE
     if not init:
         downloaded_when = get_from_remote()
-        print('Using db meta from {0} '.format(downloaded_when))
+        if verbose:
+            print('Using db meta from {0} '.format(downloaded_when))
 
     if not os.path.exists(default_sql_lite):
         db = sqlite3.connect(default_sql_lite)
