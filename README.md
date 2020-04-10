@@ -32,6 +32,7 @@ python config_parse.py
 ```
 then edit config.ini . For details check config_parse.py
 
+
 ## Easy config
 
 Run
@@ -80,6 +81,36 @@ config['remote']['drive_metadata_db_id'] = id_meta
 with open(config_path,'w') as f:
         config.write(f)
 
+```
+
+## Config file example
+
+
+```
+[drive_api]
+client_id = <data from drive api config>
+project_id = <data from drive api config>
+token_uri = <data from drive api config>
+auth_provider_x509_cert_url = <data from drive api config>
+client_secret = <data from drive api config>
+redirect_uris = <data from drive api config>
+auth_uri = <data from drive api config>
+
+[remote]
+drive_storage_folder_id = <google drive id for folder>
+drive_metadata_db_id = <google drive id for sqlitedb>
+
+
+[local_folders]
+folder_input = files_to_upload
+folder_output = files_to_delete
+mountpoint = virtual_library
+
+[encription]
+key = <32 chars key>
+
+[virtual_library]
+cache_size = 32
 ```
 
 
