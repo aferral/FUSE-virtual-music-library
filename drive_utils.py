@@ -1,5 +1,11 @@
 import pickle
 import os.path
+import ssl
+import threading
+
+from googleapiclient.http import HttpRequest
+
+import httplib2
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -8,14 +14,14 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 import random
 from datetime import datetime
 import shutil
-from utils import encrypt_file, key, decrypt_file
+from utils import encrypt_file, key, decrypt_file, decrypt_string
 from functools import lru_cache
 import hashlib
 import os.path
 import hashlib
 import tempfile
 import logging
-from config_parse import folder_output, folder_input, drive_st_folder,default_cred_dict, cache_size 
+from config_parse import folder_output, folder_input, drive_st_folder,default_cred_dict, cache_size
 
 log = logging.getLogger('fuse.log-mixin')
 folder_out = folder_output
@@ -26,6 +32,8 @@ os.makedirs(folder_out,exist_ok=True)
 valid_types = ['mp3','flac','opus','ogg','m4a']
 FOLDER_ID = drive_st_folder
 SCOPES = ['https://www.googleapis.com/auth/drive']
+    
+
 
 def get_service(cred_dict=None):
     creds = None
@@ -49,7 +57,6 @@ def get_service(cred_dict=None):
     return service
 
 
-# carga servicio a nivel de modulo
 drive_service = get_service()
 
 
@@ -86,7 +93,7 @@ def download_file(drive_service, file_id,out_fd):
 
 def encript_update_file(drive_id, file_path, new_name):
     key_to_use = key
-    driver_service = get_service()
+    driver_service = drive_service()
 
     with open(file_path, 'rb') as fd:
         io_temp = io.BytesIO()
@@ -124,6 +131,39 @@ def encript_and_upload(file_path,new_name,e_key=None,drive_s=None,parent_folder=
         new_id = upload_file(driver_service, io_temp, file_metadata,parent_folder)
 
     return new_id
+
+
+lock = threading.Lock()
+
+def iter_file(file_id):
+
+    request = drive_service.files().get_media(fileId=file_id)
+    temp_io = io.BytesIO()
+    downloader = MediaIoBaseDownload(temp_io, request,chunksize=600*1000)
+    readed=0
+    done = False
+    temp_buffer = bytes()
+    while done is False:
+
+        with lock:
+            status, done = downloader.next_chunk()
+
+        temp_io.seek(readed)
+        data_out = temp_io.read()
+        readed+=len(data_out)
+        print('Readed {0}'.format(readed))
+
+        data_in = temp_buffer+data_out
+        n=len(data_in)
+        resto=n%16
+
+        data_to_send = data_in[:-resto]
+        temp_buffer = data_in[-resto:]
+        if len(data_to_send) > 0:
+            yield decrypt_string(data_to_send,key)
+    if len(temp_buffer) > 0:
+        yield decrypt_string(temp_buffer, key)
+
 
 
 @lru_cache(maxsize=cache_size)

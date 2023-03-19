@@ -44,3 +44,6 @@ def decrypt_file(file_name, key,out_fd):
 
     out_fd.write(dec)
 
+
+def decrypt_string(ciphertext, key):
+    return decrypt(ciphertext, key)
